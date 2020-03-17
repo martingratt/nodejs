@@ -1,0 +1,328 @@
+passcheck aufgerufen mit dem Usernamen "aleks" und dem Passwort "passwodi"
+
+Zusätzliche Anmerkung: Sämtliche Notizen wurden im Zuge der ersten Schleifendurchläufe notiert, bedeutet dass sich die Werte innerhalb der jeweiligen Register pro Iteration ändern können!
+Zum Zwecke des besseren Verständnisses wurden die Werte innerhalb der ersten Schleifendurchgänge notiert und festgehalten
+So wird der unter ebp-0xc liegende Counter pro Iteration inkrementiert (zu Beginn ist dieser jedoch 0)
+
+Die von der Main aufgerufene Unterfunktion  liegt an der Speicheradresse 0x400747             #Main = Caller Program (Aufrufende Funktion) und 0x400747 = Callee Program (Aufgerufene Funktion)
+Hier wird dann die Passwort Überprüfungs- und Pseudo-Passwort Generierungssequenz gestartet!
+break *0x400747
+
+x/20i 0x00400747
+x/4i 0x400500
+mov    ebx,DWORD PTR [esp]
+						#Danach wird nach der vorhergehenden Zwischenspeicherung des Stackpointers (ESP) in das Register ebx, der aktuelle Wert in ebx mit der Hexadezimal kodierten Zahl "0x18ac" addiert
+0x400754:	add    ebx,0x18ac	        #Als Ergebnis wird in EBX die Adresse "0x402000" eingetragen
+					
+0x400778:	call   0x400480 <strlen@plt>    #Als Funktionsergebnis wird im Akkumulator (eax) die Länge des Benutzernamens hineingeschrieben
+							
+0x400780: mov    DWORD PTR [ebp-0x10],eax       #Danach wird die Länge des Benutzernames am Stack (an der Stelle ebp-0x10) abgelegt
+						=> In ebp-0x10 steht nun 5 (bezogen auf dieses Beispiel, mit dem Usernamen "aleks")
+
+0x40078a:	jmp    0x400868		    	#Es erfolgt ein unbedingter (non conditional) Sprungbefehl an die Speicheradresse 0x400868
+break *0x400868
+
+x/20i 0x400868
+   0x400868:	mov    eax,DWORD PTR [ebp-0xc]   #in eax wird 0 geschrieben (Null wurde bereits zuvor in "ebp-0xc" eingetragen)
+   0x40086b:	cmp    eax,DWORD PTR [ebp-0x10]  #Ist jener Wert welcher im EAX steht (hier nun 0) größer als die Länge des Benutzernames (wurde zuvor via strlen ermittel und ist in [ebp-0x10]
+                                                  gespeichert, in diesem Fall ist 0 < 5 und ist es wird der nachfolgende bedingbare Sprungbefehl "je" auf die Adresse 0x40078f ausgelöst
+   0x40086e:  jl     0x40078f
+
+******************************************
+   0x400874:	jmp    0x40091b
+   0x400879:	nop                              #dieser Block wird nachträglich eventuell relevant sein, sobald wir wieder zurückspringen sollten
+   0x40087a:	jmp    0x40091b
+   0x40087f:	cmp    DWORD PTR [ebp-0xc],0x9
+   0x400883:	jg     0x4008d5
+******************************************
+break *0x40078f
+x/40i 0x40078f
+
+(gdb) x/40i 0x40078f
+=> 0x40078f:	cmp    DWORD PTR [ebp-0xc],0x8   #Der Wert in "ebp-0xc" wird mit 8 verglichen, hier steht noch immer Null drinnen und 0 ist kleiner als 8
+   0x400793:	jg     0x400879                  #0 ist kleiner als 8 deshalb wird der Sprungbefehl nicht ausgeführt
+   0x400799:	cmp    DWORD PTR [ebp-0xc],0x0   #0 steht an der stelle ebp-0xc und die Bedingung wird erfüllt (0=0)
+   0x40079d:	jne    0x4007db                  #Der Sprungbefehl wird ebenfalls nicht ausgeführt da beiden Operanden übereinstimmen => sind somit equal
+   
+----- Schema 1 zur Verarbeitung des ersten Zeichens (Pos 0) -----
+
+   0x40079f:	mov    eax,DWORD PTR [ebp+0x8]   #Hier wird unser übergebene Username (Argument) "aleks" in den Akkumulator (eax) geschrieben
+   0x4007a2:	movzx  eax,BYTE PTR [eax]        #Der erste Buchstabe wird über die Speicheradresse der String Variable referenziert (BYTE PTR [eax]) des übergebenen Strings bzw. Usernamens 
+   0x4007a5:	movsx  edx,al                    #Die ersten 8-Bit also das erste Byte wird in das edx register gespeichert
+   0x4007a8:	mov    eax,DWORD PTR [ebp+0x8]   #Erneut (analog zur Zeile 0x40079f) Hier wird unser übergebene Username (Argument) "aleks" in den Akkumulator (eax) geschrieben
+                                                  Dabei wird die Speicheradresse, welche auf die erste Adresse des übergebenen Strings referenziert, in das EAX Register geladen und nicht
+   0x4007ab:	add    eax,0x1                   #Jetzt passiert etwas spannendes: Über diese Zeile wird nämlich die in EAX abgelegene Speicheradresse, welche auf den Anfang des Strings/Arguments Username verweist
+                                                  um 1 inkrementiert => bedeutet dass nun die in eax gespeicherte adresse auf den zweiten Buchstaben unseres übergebenen Benutzernamens 
+   0x4007ae:	movzx  eax,BYTE PTR [eax]        #Nun wird der zweite Buchstabe über die Speicheradresse der String Variable referenziert (BYTE PTR [eax]) des übergebenen Strings bzw. Usernamens 
+   0x4007b1:	movsx  eax,al                    #Die dazugehörigen 8-Bit werden in das edx register gespeichert => jetzt steht in eax jedoch der zweite buchstabe! (siehe oben)
+  
+   Kurze Überprüfung:
+   Eingegeben wurde als erster Buchstabe des Benutzernames "a"; Dieser ist im EDX Register hexadezimal kodiert als 0x61 (dies ist nach der ASCII Kodierung der Buchstabe "a")
+   Im EAX Register sollte sich nun durch die vorhergehende richtige Referenzierung nun der zweite Buchstabe des Benutzernamens befinden; dieser lautet "l" und dieser ist hexadezimal kodiert als 0x6c
+
+   0x4007b4:	lea    ecx,[edx+eax*1]    #An dieser Stelle findet der nächste spannende Schritt statt: Der erste und der zweite Buchstabe des Benutzernamens werden miteinander addiert (also deren headezimal Repräsentation)
+                                           und der Wert im Anschluss in das ecx Register geladen/geschrieben 
+   0x4007b7:	mov    edx,0x2c0b02c1     #Die Hexadezimalzahl 0x2c0b02c1 wird in edx geschrieben => könnte für den PW Generierungsalgorithmus relevant sein; momentan akzeptiere ich das so;
+   0x4007bc:	mov    eax,ecx            #Der in Adresszeile 0x4007b4 neu generierte Buchstabe bzw. Hexadezimalwert wird nun in den Akkumulator geschrieben
+          				  #In unserem Fall entspricht dies für den ersten Schleifendurchlauf folgenden Werten: edx (0x61) + eax(0x6c) = 0xCD => ASCII Symbol "Í"
+
+   0x4007be:	imul   edx                #In dieser Ausführung des imul Befehls wird der Quelloperand (edx) mit dem Zieloperanden (eax) multipliziert
+					   Dabei wird der zuvor in edx gespeicherte Wert 0x2c0b02c1 mit dem im EAX befindlichen Wert 0xCD multipliziert
+					   Das Ergebnis lautet dabei für den ersten Schleifendurchlauf 0x2344D1348D; da das Ergebnis mehr als 32-Bit breit bzw. 4 Byte breit ist, werden die LSBs (also alle 32-Bit) in den Akkumulator geschrieben
+					   und der übrieg gebliebene Wert (=23) der großen Zahl wird in das edx Register geschrieben
+					   => Im eax steht nun an dieser Stelle der Wert 0x44D1348D und im edx das MSB 0x23
+   0x4007c0:	sar    edx,0x4            #Jetzt wird der im EDX Register befindliche Wert (in unserem Fall 0x23 Hexadezimal = 35 Dezimal) um 4 Bitpositionen nachr rechts verschoben (Shift Arithmetic Right = SRA)
+                                           Ein Shift der Bitfolge nach rechts ist mit einer Disivion gleichzusetzen
+                                           EDX enthält dann das Ergebnis (0x23 Hexadezimaldarstellung dividiert durch 0x10 (=16) bei Hexadezimaldarstellung) welches hier der Zahl 2 entspricht;
+   0x4007c3:	mov    eax,ecx            #Der zuvor errechnete Wert der ersten zwei Buchstaben des Usernamen (also hierbei konkret 0xCD) wird nun in den Akkumulator geschrieben
+                                          #In eax steht somit 0xCD (für den ersten Durchlauf)
+   0x4007c5:	sar    eax,0x1f           #Der im Akkumulator abgespeicherte Wert (0xCD) wird nun um 31 Positionen nach rechts verschoben; in eax steht nun 0
+   0x4007c8:	sub    edx,eax		  #Hier ändert sich momentan nichts; In edx steht weiterhin 2 und im eax Registor 0
+   0x4007ca:	mov    eax,edx            #Der Wert von edx wird nun in eax geschrieben; in eax steht somit 2 (im ersten Schleifendurchlauf) drinnen
+
+   0x4007cc:	imul   eax,eax,0x5d      #Es wird eine Multiplikation durchgeführt; der Wert in eax (0x2) wird mit der Konstante (welche als Hexadezimalzahl kodiert ist) 0x5d multipliziert
+                                          Das Ergebnis wird wiederum in das Akkumulator Register (eax) geschrieben; Nachdem dieser Befehl ausgeführt wird, steht in eax der Wert "0xBA" (= Dezimalzahl 186)
+   					  Die Hexadezimalzahl 0x5d entspricht der Dezimalzahl 93 => Vielleicht wird diese Information später wichtig sein
+   0x4007cf:	sub    ecx,eax           #Jetzt wird 0xcd (liegt im Register ecx) mit 0xba (liegt im Register eax) subtrahiert; das Ergebnis wird ins ecx Register gespeichert
+					  
+   0x4007d1:	mov    eax,ecx           #Das Ergebnis der Subtraktion (betreffend des ersten Schleifendurchganges) ist 0x13; dieses Ergebnis wird nun in das eax Register geschrieben
+   0x4007d3:	add    eax,0x21          #Jetzt wird der im eax Register liegende Wert (in diesem Fall 0x13) mit der Hexadezimalzahl 0x21 (Dezimaläquivalent ist 33) addiert;
+                                          Das Ergebnis der Addition lautet 0x34 (Dezimalzahl: 52) und wird im eax Register abgespeichert
+  
+   0x4007d6:	mov    BYTE PTR [ebp-0x1b],al   #Wichtige Stelle: Jetzt werden die ersten 8 Bits bzw. die least significant bits (liegend im 8-Bit "al" Register des 32-Bit "eax" Registers) am Stack unter "ebp-0x1b" gespeichert!
+   						 Wichtig für das Verständnis: Am Stack, im zum Framepointer (ebp) negativen Offset -0x1b (Dezimalzahl: 27) wird nun das erste Zeichen unseres Pseudo-Passwortes abgelegt!
+						 Man sieht hier nun dass die Passwortgenerierung zur Laufzeit berechnet wird und das zeichenweise
+   						 Das erste Zeichen des Pseudo-Passwortes ist somit 0x34; 0x34 ist ASCII kodiert die Ziffer "4"
+   0x4007d9:	jmp    0x400828                 #Es erfolgt nun der unbedingte (non conditional) Sprungbefehl zu jener Stelle, an der das berechnete Passwort bzw. das erste Zeichen davon mit dem von uns angegeben Passwort verglichen wird
+                                         
+----- Ende Schema 1 -----
+
+
+x/30i 0x400828
+break *0x400828
+
+   0x400828:	lea    edx,[ebp-0x1b]			#Das erste Zeichen des Pseudo-Passworts, welches zuvor berechnet und am Stack abgelegt wurde, wird nun in das edx Register geschrieben/geladen
+							 WICHTIG: Nochmals zum Verständnis: HIER wird nur die unter ebp-0x1b liegende Speicheradresse in das edx Register geladen und nicht der Inhalt welcher über diese Speicheradresse referenziert wird!
+                                                         Der Inhalt von ebp-0x1b ist eine Speicheradresse, welche den Speicherort des ersten Zeichen vom Pseudo-Passwort angibt
+ 							 Über diese Speicheradresse können wir folglich den darin abgespeicherten Inhalt referenzieren, in diesem Fall das erste Zeichen des Pseudo-Passworts - die zuvor berechnete Ziffer "4"
+                                                        
+							 Erklärung über https://www.cs.virginia.edu/~evans/cs216/guides/x86.html :
+							 lea — Load effective address 
+							 The lea instruction places the address specified by its second operand into the register specified by its first operand. Note, the contents of the memory location are not loaded, only the effective address is computed and placed into the register.
+					                 This is useful for obtaining a pointer into a memory region.
+   
+							 Zur Kontrolle, wird folgendes im GDB angegeben und angezeigt:
+                                                         (gdb) i reg edx
+                                                         edx            0xbffff2ad          -1073745235
+						         (gdb) x/w 0xbffff2ad
+                                                         0xbffff2ad:	0x00000034
+                                                         (gdb) x/s 0xbffff2ad
+                                                         0xbffff2ad:	"4"
+
+     
+   0x40082b:	mov    eax,DWORD PTR [ebp-0xc]	         #eax wird mit 0 überschrieben (dieser Wert befindet sich nach wie vor in ebp-0xc)
+   0x40082e:	add    eax,edx				 #Jetzt wird der in edx liegende Wert in eax gespeichert
+						          In diesem Fall wird die zuvor mittels "lea" Befehls geladene Speicheradresse ins eax Register geschrieben
+                                                          Im eax Register steht somit: 0xbffff2ad (jene Speicheradresse an der das erste Zeichen des Pseudo PWs abgelegt ist)
+   0x400830:	movzx  edx,BYTE PTR [eax]	         #Das erste Byte beginnend ab der Speicheradresse 0xbffff2ad wird nun in das edx Register geladen
+							  Es wird nun 0x34 (Ziffer 4), also das erste Zeichen unseres Zufallspassworts, in das edx Register geschrieben
+   0x400833:	mov    ecx,DWORD PTR [ebp-0xc]		 #Das ecx Register wird mit 0 überschrieben
+   0x400836:	mov    eax,DWORD PTR [ebp+0xc]           #Und was passiert hier? Hier wird nun die unter ebp+0xc liegende Speicheradresse ins eax Register geschrieben
+                                                          Und was ist an dieser Speicheradresse abgelegt? Richtig, unser eingegebenes Passwort "passwodi" :)
+   0x400839:	add    eax,ecx                           #Compiler Optimierung wahrscheinlich (der wert in eax wird mit 0 addiert); Der in eax liegende Wert ist unverändert
+   0x40083b:	movzx  eax,BYTE PTR [eax]                #Hier wird nun das erste Zeichen unseres eingegebenen Passworts geladen und im eax Register gespeichert; Danach steht in eax 0x70 (ASCII Zeichen "p")
+   0x40083e:	cmp    dl,al                             #HIER FINDET NUN DIE ÜBERPRÜFUNG DES ERSTEN ZEICHENS STATT!!!
+                                                          Es wird das erste Zeichen des eingegebenen Passworts (0x70 = ASCII Zeichen "p") mit dem Zeichen des Pseudo Passworts (0x34 = ASCII Zeichen "4") verglichen 
+   0x400840:	je     0x40085d                          #HIER MÜSSEN WIR NUN DAS ERSTE MAL DIE BEFEHLSFOLGE MANIPULIEREN UND AN DIESER STELLE DAS PATCH EINSPIELEN
+                                                          Andernfalls wird die lästige Scriptkiddy Fehlermeldung ausgegeben und das Programm terminiert
+                                                          Konkret müssen wir den "je" Befehl durch einen normalen "jmp" Sprungbefehl ersetzen
+                                                          Also wird folgendes gemacht: set *(char *)0x400840=0x83c61beB (0xEB ist der opcode für den near jump befehl)
+
+                   					  #set *(char *)0x400840=0x83c61beB
+                      					   nexti
+x/20i 0x40085d
+(gdb) x/20i 0x40085d
+=> 0x40085d:	mov    BYTE PTR [ebx+0xc6],0x1		  #An der Stelle am Stack ebx+0xc6 wird nun 1 hineingeschrieben - villeicht erfahren wir später noch warum ???
+   0x400864:	add    DWORD PTR [ebp-0xc],0x1            #Jetzt wird zum ersten Mal an der Stelle ebp-0xc etwas hineingeschrieben;
+                                                           Es wird nun der bestehende Wert an der Stelle ebp-0xc um 1 inkrementiert;
+                                                           Hmmm zuvor wurde an dieser Stelle der Wert "0" eingetragen und jetzt wird der bestehende Wert um 1 inkrementiert?
+                                                           Sieht ganz nach einer Zählvariable aus; hoffentlich wird der weitere Programmverlauf nähere Erkenntnisse bringen!
+   0x400868:	mov    eax,DWORD PTR [ebp-0xc]            #jetzt wird der inkrementierte Wert in das eax Register geschrieben
+   0x40086b:	cmp    eax,DWORD PTR [ebp-0x10]           #WIR ERINNERN UNS: An der Stelle ebp-0x10 bzw. 0xbffff2c8-0x10 ist die Länge unseres übergebenen Benutzernamens gespeichert!
+                                                           Hier wird nun konkret überprüft ob der im eax befindliche Wert größer ist als die Länge unseres eingegebenen Strings für den Benutzernamen (aleks wurde eingegeben => Länge = 5)
+                                          
+   0x40086e:	jl     0x40078f                           #Da die vorhergehende Bedingung eintrifft wird nun WIEDER auf 0x40078f gesprungen!
+                                                           Hä? Wieder? Ja!
+                                                           Weiter oben sehen wir nämlich, dass wir bereits zuvor die Sequenz, beginnend ab 0x40078f, durchlaufen sind und währenddessen das erste Zeichen des Pseudo-Passworts (=4) berechnet haben!
+                                                           Wir ignorieren nun zunächst die ab 0x40085d unten angeführte weiterführende Sequenz, da es uns interessiert wie die restlichen Zeichen des Passworts berechnet werden
+                                                           Ganz ignorieren dürfen wir die nachfolgenden Befehle jedoch nicht, es kann gut möglich sein dass wir sie vl. später durchlaufen werden,
+                                                           falls wir z.B. durch alle Zeichen unseres Benutzernamens durchiteriert sind (also der Wert in ebp-0xc (Zählervariable) größer ist als die Länge unseres Benutzernames, welcher in diesem Beispiel 5 beträgt und unter ebp-0x10 gespeichert und referenziert wird)
+  **********************************
+   0x400874:	jmp    0x40091b
+   0x400879:	nop
+   0x40087a:	jmp    0x40091b                            #Springt man zu dieser Adresszeile, so passiert nicht wirklich viel
+                                                            Es wird der Wert von ebx+0xc6 in den Akkumulator (eax) geschrieben
+                                                            Unter ebx+0xc6 ist immer 1 gespeichert, deswegen steht dann auch in eax der Wert 1
+                                                            Sofern der eax mit 1 beschrieben wurde, erfolgt der compare befehle: cmp al (8bit des eax registers), 0x1
+                                                            Diese Bedingung wird erfüllt und es wird der nachfolgende Jump Befehl ausgelöst: je 0x40087f
+                                                            Wir springen dadurch also wieder zurück und es wird die unten angeführte Sequenz an Befehlen durchlaufen
+  **********************************
+   0x40087f:	cmp    DWORD PTR [ebp-0xc],0x9
+   0x400883:	jg     0x4008d5                            #Hier springen wir erst rein nachdem insgesamt 10 Zeichen verarbeitet wurden (1.Buchstabe beginnt bei Index 0 und der 10 Buchstabe liegt an der Stelle 9 = insgesamt 10)
+   
+    ----- SSchema 3 zur Verarbeitung der Zeichen 6-10 (Pos 5 bis einschließlich Pos 9) -----
+   0x400885:	mov    eax,DWORD PTR [ebp-0xc]
+   0x400888:	sub    eax,0x1
+   0x40088b:	movzx  eax,BYTE PTR [ebp+eax*1-0x1b]
+   0x400890:	movsx  edx,al
+   0x400893:	mov    eax,DWORD PTR [ebp-0xc]
+   0x400896:	lea    esi,[eax+0x41]
+   0x400899:	mov    eax,0xa
+   0x40089e:	sub    eax,DWORD PTR [ebp-0xc]
+   0x4008a1:	mov    ecx,eax
+   0x4008a3:	shl    esi,cl
+   0x4008a5:	mov    eax,esi
+   0x4008a7:	lea    ecx,[edx+eax*1]
+   0x4008aa:	mov    edx,0x2c0b02c1
+   0x4008af:	mov    eax,ecx
+   0x4008b1:	imul   edx
+   0x4008b3:	sar    edx,0x4
+   0x4008b6:	mov    eax,ecx
+   0x4008b8:	sar    eax,0x1f
+   0x4008bb:	sub    edx,eax
+   0x4008bd:	mov    eax,edx
+   0x4008bf:	imul   eax,eax,0x5d
+   0x4008c2:	sub    ecx,eax
+   0x4008c4:	mov    eax,ecx
+   0x4008c6:	add    eax,0x21
+   0x4008c9:	mov    ecx,eax
+   0x4008cb:	lea    edx,[ebp-0x1b]
+   0x4008ce:	mov    eax,DWORD PTR [ebp-0xc]
+   0x4008d1:	add    eax,edx
+   0x4008d3:	mov    BYTE PTR [eax],cl
+   0x4008d5:	lea    edx,[ebp-0x1b]
+   0x4008d8:	mov    eax,DWORD PTR [ebp-0xc]
+   0x4008db:	add    eax,edx
+   0x4008dd:	movzx  edx,BYTE PTR [eax]
+   0x4008e0:	mov    ecx,DWORD PTR [ebp-0xc]
+   0x4008e3:	mov    eax,DWORD PTR [ebp+0xc]
+   0x4008e6:	add    eax,ecx
+   0x4008e8:	movzx  eax,BYTE PTR [eax]
+   0x4008eb:	cmp    dl,al
+   0x4008ed:	je     0x40090a                   #Diese Adresszeile müssen wir ebenfalls manipulieren um die Fehlermeldung zu umgehen!
+                                                   set *(char *)0x4008ed=0x83c61beB
+
+  ----- Ende Schema 3 -----
+
+
+Zurück zu  0x40078f:                                    #zweiter Durchlauf - Vermutung, dass diese Sequenz n mal durchlaufen wird)
+
+(gdb) x/40i  0x40078f
+   0x40078f:	cmp    DWORD PTR [ebp-0xc],0x8          #kennen wir aus dem ersten Durchlauf; Bedingung wird nicht erfüllt da der Counter bzw. Wert in ebp-0xc nach wie vor kleiner ist als 8
+   0x400793:	jg     0x400879                         #wird nicht ausgeführt - aber vl. dann später wenn unsere Zählvariable bzw der Counter größer ist als 8? 
+   0x400799:	cmp    DWORD PTR [ebp-0xc],0x0          #auch diese Zeile ist uns aus dem ersten Durchlauf bekannt, hier wird der in ebp-0xc liegende Wert gegen 0 verglichen,
+                                                         ABER DIESMAL liegt unter ebp-0xc ein Wert ungleich 0! Wir haben diesen ja zuvor um 1 inkrementiert (Zeile 0x400864)
+   0x40079d:	jne    0x4007db                         #JETZT ERFOLGT der Sprungbefehl da die für benötigten Register Statusflags gesetzt sind!
+                                                         ES wird somit nun an eine andere Stelle gesprungen und die vorhergehende Passwortgenerierungssequenz, welche für das erste Zeichen angewendet wurde, wird übersprungen
+                                                         INTERESSANT! Das bedeutet dass nicht alle Zeichen des Pseudo-Passworts nach dem gleichen Schema berechnet werden
+                                                         Das schauen wir uns doch gleich mal näher an!
+
+Schauen wir uns nun an was konkret ab 0x4007db passiert
+Die Assembler Befehlsfolge wurde bewusst auf 40 bzw. 40 instructions festgelegt, da ich herausfinden möchte wann der nächste Sprungbefehl stattfindet bzw. unter welcher Bedingung dieser stattfindet
+Und wir werden auch schon fündig: An der Speicheradresse 0x400840 erfolgt wieder der von uns zuvor gepatche Sprungbefehl, wieder zur Speicheradresse 0x40085d
+=> In 0x40085d scheint es sich also abzuspielen
+Aber sehen wir uns eines nach dem anderen an, wir wollen ja schließlich verstehen was hier passiert :)
+
+break *0x4007db
+
+----- Schema 2 zur Verarbeitung der Zeichen 2-5 (Pos 1 bis einschließlich Pos 4) -----
+
+(gdb) x/40i  0x4007db
+   0x4007db:	mov    eax,DWORD PTR [ebp-0xc]         #Laden des Counters in das EAX Register
+                                                        In eax steht nun der aktuelle Counter Wert (1,2,3,4,5,6,7 oder 8)
+   0x4007de:	sub    eax,0x1                         #Der in eax liegende Counter Wert wird um 1 subtrahiert (weshalb auch immer - vl. finden wir es später heraus)
+   0x4007e1:	movzx  eax,BYTE PTR [ebp+eax*1-0x1b]   #Okay, hier wird nun anscheinend über die Register inderekte Adressierung eventuell der nachfolgende Pseudo-Buchstabe referenziert
+                                                        Aktuell wird wieder der zuvor berrechnete erste Buchstabe des Pseudo-Passworts referenziert (0x34 bzw. "4") und in das eax Register gespeichert
+   0x4007e6:	movsx  eax,al                          #Macht das gleiche wie zuvor die Zeile  0x4007e1, es wird wieder 0x34 in das eax geschrieben (vermutlich dient dies der Interpretation von vorzeichenlosen und vorzeichenbehafteten Zahlen)
+  
+   0x4007e9:	mov    ecx,DWORD PTR [ebp-0xc]         #Der aktuelle Wert der Zählervariable, welcher unter ebp-0xc gespeichert ist wird in das ecx Register gespeichert
+   0x4007ec:	mov    edx,DWORD PTR [ebp+0x8]         #WICHTIG: Hier wird wieder der eingegebene Benutzername (aleks) referenziert bzw. dessen Speicheradresse, an welcher der Benutzername abgelegt ist und in das EDX Register gespeichert!
+   0x4007ef:	add    edx,ecx                         #Der in edx liegende Wert (Speicheradresse an welcher der Benutzername abgelegt ist) wird nun um den aktuellen Wert des Counters bzw. der Zählervariable inkrementiert
+                                                        Wert von edx bevor dieser befehl ausgefürt wurde: 0xbffff54e => Zeigt auf a
+                                                        Wert von edx bevor dieser befehl ausgefürt wurde: 0xbffff54f => Zeigt auf l
+                                                        (Anmerkung: Der Counter Value (liegend unter ebp-0xc) war hierbei 1)
+  						        Im Vergleich zu den Opcodes werden die eingegebenen Strings (Username und Passwort) in Big Endian Darstellung abgelegt
+                                                        also wird der erste Buchstabe des Usernamens/Passworts auch an der niedrigsten Speicheradresse abgelegt:
+
+                                                        Kontrolle:
+                                                        (gdb) x/s 0xbffff54f
+                                                        0xbffff54f:	"leks"
+							(gdb) x/s 0xbffff550
+							0xbffff550:	"eks"
+							(gdb) x/s 0xbffff551
+							0xbffff551:	"ks"
+							(gdb) x/s 0xbffff552
+							0xbffff552:	"s"
+							(gdb) x/s 0xbffff553
+							0xbffff553:	""    (terminierendes \0 Literal)
+							(gdb) x/s 0xbffff554
+							0xbffff554:	"passwodi"
+							(gdb) x/s 0xbffff555
+							0xbffff555:	"asswodi"
+							(gdb) x/s 0xbffff556
+							0xbffff556:	"sswodi"
+
+
+   0x4007f1:	movzx  edx,BYTE PTR [edx]           #Hier wird nun über den Pointer der unter der Speicheradresse liegende Operand direkt referenziert 
+                                                     Also wird in diesem Fall der nächste Buchstabe des Usernamens (l) direkt referenziert und in das edx Register gespeichert
+                                                     Im edx Register steht dann 0x6c (ASCII kodierter Buchstabe l); Dies variiert dann natürlich pro Schleifeniteration
+   0x4007f4:	movsx  edx,dl                       #dl beinhaltet ja die least significant bits des 32-Bit breiten EDX Registers und beinhaltet deshalb auch den gleichen Wert und zwar den Buchstaben "l" hexadezimal kodiert 0x6c (in diesem Schleifendurchlauf)
+                                                     Im edx Register steht also nach wie vor der nachfolgende Buchstabe des Benutzernamens
+   0x4007f7:	shl    edx,0x2                      #Es erfolgt ein bitweises Verschieben des Wertes im edx Register um 2 Stellen nach links
+                                                     Das bitweise verschieben nach links ist mit einer Multiplikation gleichzusetzen, hier mit einer Multiplikation mit *4
+                                                     Bezogen auf den zweiten Schleifendurchlauf steht im edx Register dann 0x1b0
+   0x4007fa:	lea    ecx,[eax+edx*1]              #Die in den eax und edx Registern befindlichen Werten werden nun addiert un der hexadezimal codierte Wert in das ecx Register geschrieben (finden wir vl. später heraus warum)
+   0x4007fd:	mov    edx,0x2c0b02c1               #Die hexadezimal codierte Zahl kommt 0x2c0b02c1 kommt uns auch bereits bekannt vor
+                                                     Diese wurde unter anderem als zusätzliche Zutat zur Berechnung des ersten Zeichens des Pseudo-PWs verwendet
+  						     Das edx Register wird dadurch mit 0x2c0b02c1 überschrieben
+   0x400802:	mov    eax,ecx                      #Der aus der Zeile  0x4007fa ermittelte bzw. errechnete Wert wird nun in den Akkumulator (eax) geschrieben
+   0x400804:	imul   edx                          #Angeleht an unsere Eingabe, wird im zweiten Schleifendurchlauf nun konkret der Wert des edx Registers (2c0b02c1) mit dem Wert des eax Registers (0x1e4) multipliziert
+                                                     Das Ergebnis lautet 5344D134E4
+                                                     Da das Ergebnis größer ist als 32 Bit werden wieder die 32-Bit bzw. least significant bits des Ergebnisses (0x44D134E4) in das eax Register gespeichert
+                                                     und der übrig gebliebene Wert (53) wird in das edx Register gespeichert
+   0x400806:	sar    edx,0x4                      
+   0x400809:	mov    eax,ecx
+   0x40080b:	sar    eax,0x1f
+   0x40080e:	sub    edx,eax
+   0x400810:	mov    eax,edx
+   0x400812:	imul   eax,eax,0x5d
+   0x400815:	sub    ecx,eax
+   0x400817:	mov    eax,ecx
+   0x400819:	add    eax,0x21
+   0x40081c:	mov    ecx,eax
+   0x40081e:	lea    edx,[ebp-0x1b]
+   0x400821:	mov    eax,DWORD PTR [ebp-0xc]      #Es wird wieder ein ähnlicher Ansatz gewählt und die restlichen zeichen des Pseudo-PWs dadurch berechnet
+                                                     Das restliche "How-To" schauen wir uns später genauer an - jetzt einmal will ich die Anwendung ordnungsgemäß patchen,
+                                                     damit jedes eingegebene Passwort akzeptiert wird - also überspringen wir mal diese sequenz und gehen direkt zum nächsten jump befehl (0x400840)!
+   0x400824:	add    eax,edx
+   0x400826:	mov    BYTE PTR [eax],cl
+   ----- Ende Schema 2 -----
+
+   0x400828:	lea    edx,[ebp-0x1b]
+   0x40082b:	mov    eax,DWORD PTR [ebp-0xc]
+   0x40082e:	add    eax,edx
+   0x400830:	movzx  edx,BYTE PTR [eax]
+   0x400833:	mov    ecx,DWORD PTR [ebp-0xc]
+   0x400836:	mov    eax,DWORD PTR [ebp+0xc]
+   0x400839:	add    eax,ecx
+   0x40083b:	movzx  eax,BYTE PTR [eax]
+   0x40083e:	cmp    dl,al                   
+   0x400840:	jmp    0x40085d                      #okay, das ist die zeile die wir zuvor schon gepatch haben
+                                                      hierbei haben wir den je befehl durch einen jmp befehl umschrieben
+                                                      In "0x40085d" spielt sich also etwas ab                    
+
+
+   Der obere Adressblock  0x400828-0x400840 wird sowohl von "Schema 1" als auch von "Schema 2" gleichermaßen aufgerufen
+
+
+  

@@ -1,0 +1,1 @@
+ergebnis = ergebnis -1;
